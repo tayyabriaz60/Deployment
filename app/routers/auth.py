@@ -88,6 +88,56 @@ def decode_token(token: str) -> dict:
     return jwt.decode(token, get_secret_key(), algorithms=["HS256"])
 
 
+@router.post("/bootstrap-admin", response_model=dict, status_code=201)
+async def bootstrap_admin(db: AsyncSession = Depends(get_db)):
+    """
+    Create admin user from environment variables if no users exist.
+    This is a fallback if admin bootstrap failed during startup.
+    """
+    import os
+    admin_email = os.getenv("ADMIN_EMAIL")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    
+    if not admin_email or not admin_password:
+        raise HTTPException(
+            status_code=400, 
+            detail="ADMIN_EMAIL and ADMIN_PASSWORD environment variables must be set"
+        )
+    
+    # Check if any users exist
+    total = await get_user_count(db)
+    if total > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Users already exist ({total}). Cannot bootstrap admin."
+        )
+    
+    # Check if admin user already exists
+    existing = await get_user_by_email(db, admin_email)
+    if existing:
+        return {
+            "message": "Admin user already exists",
+            "email": existing.email,
+            "role": existing.role,
+            "id": existing.id
+        }
+    
+    # Create admin user
+    logger.info(f"Bootstrap: Creating admin user: {admin_email}")
+    user, error = await create_user(db, admin_email, admin_password, role="admin")
+    if error:
+        logger.error(f"Bootstrap failed: {error}")
+        raise HTTPException(status_code=400, detail=f"Failed to create admin user: {error}")
+    
+    logger.info(f"Bootstrap: Admin user created successfully: {admin_email} (ID: {user.id})")
+    return {
+        "message": "Admin user created successfully",
+        "email": user.email,
+        "role": user.role,
+        "id": user.id
+    }
+
+
 @router.get("/me", response_model=dict)
 async def me(authorization: str = "", db: AsyncSession = Depends(get_db)):
     """

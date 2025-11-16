@@ -42,20 +42,8 @@
     <script>
         const API_BASE = window.location.origin;
         
-        // Clear token on login page load (logout when user comes to login page)
-        // This ensures that if user clicks back button to login page, they are logged out
-        function clearSession() {
-            try {
-                sessionStorage.removeItem('access_token');
-                sessionStorage.removeItem('role');
-                console.log('Session cleared - user logged out');
-            } catch (error) {
-                console.error('Error clearing session:', error);
-            }
-        }
-        
-        // Clear session on page load
-        clearSession();
+        // Do NOT clear session on page load - let user navigate back/forward freely
+        // Session will be managed by dashboard and logout button
         
         const form = document.getElementById('loginForm');
         const alertBox = document.getElementById('alert');

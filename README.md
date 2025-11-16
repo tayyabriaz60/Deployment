@@ -22,7 +22,7 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
    pip install -r requirements.txt
    ```
 
-2. Create a `.env` file in the project root (full example):
+2. Copy `env.example` to `.env` and replace placeholder values (never commit `.env`):
    ```env
    # Core
    SECRET_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET
@@ -84,6 +84,49 @@ Env keys:
 
 5. Test flow: Submit feedback → AI analysis runs in background → real-time notifications on dashboard.
 
+## Security Setup (Required)
+
+**CRITICAL**: The application will not start without proper security configuration.
+
+1. **Generate Secure Secret Key**:
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(64))"
+   ```
+   Copy the output and add to `.env` as `SECRET_KEY`. Must be at least 32 characters.
+
+2. **Set Strong Admin Password**:
+   - Minimum 12 characters
+   - Mix of uppercase, lowercase, numbers, and symbols
+   - Example: `StrongPass123!@#`
+
+3. **Environment Variables**:
+   - Ensure `.env` is ignored by git (already configured)
+   - Never commit `.env` file
+   - Use `env.example` as a template
+
+4. **Production Security**:
+   - Restrict CORS origins (update `app/main.py` line 96)
+   - Restrict Socket.IO origins (update `app/sockets/events.py` line 18)
+   - Use HTTPS/reverse proxy
+   - Rotate credentials if compromised
+
+5. **Security Features Implemented**:
+   - SECRET_KEY validation (no defaults, minimum length check)
+   - XSS prevention via HTML escaping in frontend
+   - JWT authentication with bcrypt password hashing
+   - SQL injection prevention via SQLAlchemy ORM
+   - Input validation using Pydantic models
+
+## Architecture Notes
+
+- **FastAPI Application**: Async SQLAlchemy sessions with optimized connection pooling (pool_size=20, max_overflow=10).
+- **AI Analysis**: True async HTTP calls to Gemini REST API using httpx (no thread blocking).
+- **Background Tasks**: Independent database sessions to prevent lifecycle leaks.
+- **Structured Logging**: Console and rotating file handlers via `app/logging_config.py`.
+- **Security**: XSS prevention through HTML escaping, SECRET_KEY validation, and proper authentication.
+- **Performance**: SQL-level filtering with database indexes for optimal query performance.
+- **CSV Exports**: Streaming implementation to handle large datasets efficiently.
+
 ## API Endpoints
 
 ### Feedback
@@ -97,6 +140,20 @@ Env keys:
 ### Analytics
 - `GET /analytics/summary` - Get analytics summary
 - `GET /analytics/trends` - Get trends data
+
+## Known Limitations & Future Improvements
+
+1. **Concurrent Load:** Optimized for dozens of concurrent staff users; use a task queue (Celery/Redis) for heavy Gemini workloads.
+2. **AI Rate Limits:** Gemini API quotas apply. Consider request throttling or a queue if users generate spikes.
+3. **Real-time Scaling:** Socket.IO runs in-process; add a shared adapter (Redis) before scaling horizontally.
+4. **Large Exports:** Streaming CSV handles thousands of rows, but prefer data warehouses for massive exports.
+5. **Testing:** Add automated unit/integration tests before production deployment.
+
+Recommended production checklist:
+- [ ] Configure HTTPS / reverse proxy.
+- [ ] Add monitoring & alerting (Prometheus, Grafana, etc.).
+- [ ] Set up log aggregation (ELK, Loki, CloudWatch).
+- [ ] Schedule database backups and apply migrations via Alembic.
 
 ## Socket.IO Events
 

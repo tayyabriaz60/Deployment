@@ -17,6 +17,7 @@ from app.services.auth_service import (
 from app.models.user import User
 from app.deps import get_current_user_optional
 from app.logging_config import get_logger
+from sqlalchemy import select
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -64,20 +65,40 @@ async def register(
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     logger.info(f"Login attempt for email: {payload.email}")
+    
+    # Check if user exists (case-insensitive email match)
     user = await get_user_by_email(db, payload.email)
     if not user:
+        # Log all users for debugging (only in development)
+        import os
+        if os.getenv("ENVIRONMENT", "production").lower() == "development":
+            all_users = await db.execute(select(User))
+            users_list = all_users.scalars().all()
+            logger.debug(f"Available users in database: {[u.email for u in users_list]}")
+        
         logger.warning(f"Login failed: User not found for email: {payload.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Invalid credentials"
         )
-    password_valid = verify_password(payload.password, user.password_hash)
+    
+    # Verify password
+    try:
+        password_valid = verify_password(payload.password, user.password_hash)
+    except Exception as e:
+        logger.error(f"Password verification error for {payload.email}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+    
     if not password_valid:
         logger.warning(f"Login failed: Invalid password for email: {payload.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="Invalid credentials"
         )
+    
     logger.info(f"Login successful for user: {user.email} (role: {user.role})")
     access_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     refresh_token = create_refresh_token({"sub": str(user.id)})
@@ -98,23 +119,19 @@ async def bootstrap_admin(db: AsyncSession = Depends(get_db)):
     admin_email = os.getenv("ADMIN_EMAIL")
     admin_password = os.getenv("ADMIN_PASSWORD")
     
+    logger.info(f"Bootstrap endpoint called. ADMIN_EMAIL: {admin_email}, ADMIN_PASSWORD: {'*' * len(admin_password) if admin_password else 'NOT SET'}")
+    
     if not admin_email or not admin_password:
+        logger.error("Bootstrap failed: ADMIN_EMAIL or ADMIN_PASSWORD not set in environment")
         raise HTTPException(
             status_code=400, 
             detail="ADMIN_EMAIL and ADMIN_PASSWORD environment variables must be set"
         )
     
-    # Check if any users exist
-    total = await get_user_count(db)
-    if total > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Users already exist ({total}). Cannot bootstrap admin."
-        )
-    
-    # Check if admin user already exists
+    # Check if admin user already exists (by exact email)
     existing = await get_user_by_email(db, admin_email)
     if existing:
+        logger.info(f"Admin user already exists: {existing.email} (ID: {existing.id})")
         return {
             "message": "Admin user already exists",
             "email": existing.email,
@@ -122,20 +139,37 @@ async def bootstrap_admin(db: AsyncSession = Depends(get_db)):
             "id": existing.id
         }
     
+    # Check if any users exist
+    total = await get_user_count(db)
+    if total > 0:
+        # List all users for debugging
+        all_users_result = await db.execute(select(User))
+        all_users = all_users_result.scalars().all()
+        user_emails = [u.email for u in all_users]
+        logger.warning(f"Users already exist ({total}): {user_emails}. Cannot bootstrap admin.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Users already exist ({total}). Cannot bootstrap admin. Existing users: {', '.join(user_emails)}"
+        )
+    
     # Create admin user
     logger.info(f"Bootstrap: Creating admin user: {admin_email}")
-    user, error = await create_user(db, admin_email, admin_password, role="admin")
-    if error:
-        logger.error(f"Bootstrap failed: {error}")
-        raise HTTPException(status_code=400, detail=f"Failed to create admin user: {error}")
-    
-    logger.info(f"Bootstrap: Admin user created successfully: {admin_email} (ID: {user.id})")
-    return {
-        "message": "Admin user created successfully",
-        "email": user.email,
-        "role": user.role,
-        "id": user.id
-    }
+    try:
+        user, error = await create_user(db, admin_email, admin_password, role="admin")
+        if error:
+            logger.error(f"Bootstrap failed: {error}")
+            raise HTTPException(status_code=400, detail=f"Failed to create admin user: {error}")
+        
+        logger.info(f"Bootstrap: Admin user created successfully: {admin_email} (ID: {user.id})")
+        return {
+            "message": "Admin user created successfully",
+            "email": user.email,
+            "role": user.role,
+            "id": user.id
+        }
+    except Exception as e:
+        logger.exception(f"Bootstrap exception: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create admin user: {str(e)}")
 
 
 @router.get("/me", response_model=dict)

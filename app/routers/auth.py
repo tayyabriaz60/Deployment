@@ -16,9 +16,11 @@ from app.services.auth_service import (
 )
 from app.models.user import User
 from app.deps import get_current_user_optional
+from app.logging_config import get_logger
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = get_logger(__name__)
 
 
 class RegisterRequest(BaseModel):
@@ -61,9 +63,22 @@ async def register(
 
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+    logger.info(f"Login attempt for email: {payload.email}")
     user = await get_user_by_email(db, payload.email)
-    if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if not user:
+        logger.warning(f"Login failed: User not found for email: {payload.email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid credentials"
+        )
+    password_valid = verify_password(payload.password, user.password_hash)
+    if not password_valid:
+        logger.warning(f"Login failed: Invalid password for email: {payload.email}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Invalid credentials"
+        )
+    logger.info(f"Login successful for user: {user.email} (role: {user.role})")
     access_token = create_access_token({"sub": str(user.id), "email": user.email, "role": user.role})
     refresh_token = create_refresh_token({"sub": str(user.id)})
     return TokenResponse(access_token=access_token, refresh_token=refresh_token, role=user.role)

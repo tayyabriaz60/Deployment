@@ -116,10 +116,17 @@ async def ensure_admin_user(db: AsyncSession, email: Optional[str], password: Op
     Create an admin user if none exists and env ADMIN_EMAIL/ADMIN_PASSWORD provided.
     """
     if not email or not password:
+        logger.info("Admin bootstrap skipped - ADMIN_EMAIL or ADMIN_PASSWORD not set")
         return
     count = await get_user_count(db)
     if count > 0:
+        logger.info(f"Admin bootstrap skipped - {count} user(s) already exist")
         return
-    await create_user(db, email=email, password=password, role="admin")
+    logger.info(f"Creating initial admin user: {email}")
+    user, error = await create_user(db, email=email, password=password, role="admin")
+    if error:
+        logger.error(f"Failed to create admin user: {error}")
+        raise RuntimeError(f"Admin user creation failed: {error}")
+    logger.info(f"Admin user created successfully: {email} (ID: {user.id})")
 
 

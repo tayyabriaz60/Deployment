@@ -548,7 +548,8 @@ document.getElementById('actionForm').addEventListener('submit', async (e) => {
 
     try {
         const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const currentToken = getToken();
+        if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
         const response = await fetch(`${API_BASE}/feedback/${feedbackId}/update`, {
             method: 'POST',
             headers,
@@ -754,7 +755,8 @@ function showAlert(message, type = 'info') {
 async function retryAnalysis(feedbackId) {
     try {
         const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const currentToken = getToken();
+        if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
         
         const response = await fetch(`${API_BASE}/feedback/${feedbackId}/retry-analysis`, {
             method: 'POST',

@@ -171,3 +171,58 @@ async def ensure_admin_user(db: AsyncSession, email: Optional[str], password: Op
     logger.info(f"Admin user created successfully: {email} (ID: {user.id})")
 
 
+async def ensure_or_update_admin_user(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    role: str = "admin"
+) -> Tuple[User, str]:
+    """
+    Smart admin user management:
+    - If user doesn't exist: CREATE new one
+    - If user exists but credentials different: UPDATE credentials
+    - If user exists and credentials same: DO NOTHING (return "unchanged")
+    
+    Returns:
+        Tuple[User, str]: (user_object, status) where status is "created", "updated", or "unchanged"
+    """
+    if not email or not password:
+        logger.error("Admin email or password is empty")
+        raise ValueError("Admin email and password are required")
+    
+    # Check if admin user with this email exists
+    existing_user = await get_user_by_email(db, email)
+    
+    if existing_user:
+        # User exists - check if password is different
+        old_password_hash = existing_user.password_hash
+        new_password_hash = hash_password(password)
+        
+        if old_password_hash != new_password_hash:
+            # Credentials different - UPDATE password
+            logger.info(f"Updating admin user credentials: {email}")
+            existing_user.password_hash = new_password_hash
+            existing_user.role = role
+            await db.commit()
+            await db.refresh(existing_user)
+            logger.info(f"Admin user updated: {email}")
+            return existing_user, "updated"
+        else:
+            # Same credentials - DO NOTHING
+            logger.info(f"Admin user already exists with same credentials: {email}")
+            return existing_user, "unchanged"
+    else:
+        # User doesn't exist - CREATE
+        logger.info(f"Creating admin user: {email}")
+        new_user = User(
+            email=email,
+            password_hash=hash_password(password),
+            role=role
+        )
+        db.add(new_user)
+        await db.commit()
+        await db.refresh(new_user)
+        logger.info(f"Admin user created: {email} (ID: {new_user.id})")
+        return new_user, "created"
+
+

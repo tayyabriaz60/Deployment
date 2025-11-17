@@ -21,7 +21,7 @@ from app.logging_config import get_logger, setup_logging
 from app.middleware.logging import RequestLoggingMiddleware
 from app.routers import analytics, feedback, health
 from app.routers import auth as auth_router
-from app.services.auth_service import ensure_admin_user, get_secret_key
+from app.services.auth_service import ensure_admin_user, ensure_or_update_admin_user, get_secret_key
 from app.sockets.events import sio
 from app.utils.errors import APIError, api_error_handler, generic_error_handler
 
@@ -52,8 +52,11 @@ async def lifespan(app: FastAPI):
         admin_password = os.getenv("ADMIN_PASSWORD")
         if admin_email and admin_password:
             async with AsyncSessionLocal() as seed_session:
-                await ensure_admin_user(seed_session, admin_email, admin_password)
-                logger.info("Admin bootstrap executed")
+                # Smart admin management: create, update, or do nothing
+                user, status = await ensure_or_update_admin_user(
+                    seed_session, admin_email, admin_password, role="admin"
+                )
+                logger.info(f"Admin user {status}: {admin_email} (ID: {user.id})")
         else:
             logger.info("Admin bootstrap skipped - set ADMIN_EMAIL/ADMIN_PASSWORD to enable")
     except Exception as exc:  # pragma: no cover

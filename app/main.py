@@ -91,14 +91,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS configuration - allow specific origins
+allowed_origins = [
+    "http://localhost:8000",
+    "http://localhost:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:3000",
+    "https://deployment-18e3.onrender.com",  # Update with your actual Render URL
+]
+
+# Allow all origins in development, specific in production
+if os.getenv("ENVIRONMENT", "production").lower() == "development":
+    allowed_origins.append("*")
+
 # Add middlewares (order matters - add logging first, then CORS)
 app.add_middleware(RequestLoggingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # Changed to False - "*" with credentials=True causes issues
-    allow_methods=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=True,  # Now safe with specific origins
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

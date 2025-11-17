@@ -91,14 +91,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add middlewares (order matters - add logging first, then CORS)
+app.add_middleware(RequestLoggingMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # Changed to False - "*" with credentials=True causes issues
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(RequestLoggingMiddleware)
 
 app.add_exception_handler(APIError, api_error_handler)
 app.add_exception_handler(Exception, generic_error_handler)
